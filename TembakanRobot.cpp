@@ -3,7 +3,6 @@
 // Jurusan	: Teknik Informatika
 
 #include <iostream>
-
 #include <cmath>
 
 #define GRAVITASI 10 //10 m/s^2
