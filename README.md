@@ -1,5 +1,4 @@
 # ITS-Robotics-2022
-UKM Robotics 2022
 
 Tugas KPP Programming 2022
 
