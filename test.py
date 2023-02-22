@@ -14,6 +14,11 @@ mp_drawing_styles = mp.solutions.drawing_styles
 mp_hands = mp.solutions.hands
 
 
+
+import cv2
+import threading
+
+
 class VideoCaptureThread:
     def __init__(self, video_source):
         self.video_capture = cv2.VideoCapture(video_source) # initialize video capture object
@@ -93,16 +98,15 @@ def local_position_cb(msg):
     Position = msg
 
 
-def pose_estimation(frame, matrix_coefficients, distortion_coefficients):
+def pose_estimation(frame,aruco_dict_type, matrix_coefficients, distortion_coefficients):
     global times
-    aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_APRILTAG_36h11)
+    aruco_dict = cv2.aruco.Dictionary_get(aruco_dict_type)
     parameters = cv2.aruco.DetectorParameters_create()
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     corners, ids, rejected_img_points = cv2.aruco.detectMarkers(gray, aruco_dict, parameters=parameters,
     cameraMatrix=matrix_coefficients, distCoeff=distortion_coefficients)
 
-    print("Zzzz")
     number_id = -1
     if len(corners) > 0:
         for i in range(len(ids)):
@@ -123,6 +127,7 @@ def pose_estimation(frame, matrix_coefficients, distortion_coefficients):
             print("[Inference] ArUco marker ID: {}".format(markerID))
             number_id = markerID
 
+        
         marker_ids = {289, 291, 293, 295, 297, 299, 301}
         if number_id in marker_ids:
             times += 1
@@ -142,38 +147,33 @@ def takeoff(pose, altitude):
     pose.pose.position.z = altitude
 
     # Send a few setpoints before starting
-    for i in range(100):   
 
-        if(rospy.is_shutdown()):
-            break
-
-        local_pos_pub.publish(pose)
-        rate.sleep()
+    local_pos_pub.publish(pose)
+    rate.sleep()
 
     # Set OFFBOARD mode
     offb_set_mode = SetModeRequest()
     offb_set_mode.custom_mode = 'OFFBOARD'
 
-    last_req = rospy.Time.now()
+    
 
     while(not rospy.is_shutdown()):
 
 
-        if(current_state.mode != "OFFBOARD" and (rospy.Time.now() - last_req) > rospy.Duration(5.0)):
+        if current_state.mode != "OFFBOARD":
             if(set_mode_client.call(offb_set_mode).mode_sent == True):
                 rospy.loginfo("OFFBOARD enabled")
             
-            last_req = rospy.Time.now()
+            
         else:
             # Arm the vehicle
-            if(not current_state.armed and (rospy.Time.now() - last_req) > rospy.Duration(5.0)):
+            if not current_state.armed :
                 arm_cmd = CommandBoolRequest()
                 arm_cmd.value = True
 
                 if(arming_client.call(arm_cmd).success == True):
                     rospy.loginfo("Vehicle armed")
             
-                last_req = rospy.Time.now()
 
         # Publish setpoint
         local_pos_pub.publish(pose)
@@ -181,6 +181,7 @@ def takeoff(pose, altitude):
         if Position.pose.position.z >= 2.99 and Position.pose.position.z <= 3.5:
             rospy.loginfo("Altitude reached: %.2f m", Position.pose.position.z)
             break
+
 
 def backward_x(pose,distance,altitude):
     pose.pose.position.x = Position.pose.position.x - distance
@@ -328,6 +329,7 @@ def colour_detect(img):
 def status_update():
     detect_status = 0
 
+
 def hand_counter(image):
     with mp_hands.Hands(
     model_complexity=0,
@@ -390,32 +392,6 @@ def hand_counter(image):
         return image, fingerCount
 
 
-class MyImageProcessingClass:
-
-    def __init__(self, intrinsic_camera, distortion):
-        self.intrinsic_camera = intrinsic_camera
-        self.distortion = distortion
-        self.ret = None
-        self.img = None
-        self.stop_thread = False
-        
-    def image_processing_thread(self):
-        global number_ids
-        while not self.stop_thread:
-            # read the latest image from the buffer
-            self.ret, self.img = video_thread.get_current_frame()
-            if self.img is not None:
-                # process the image
-                output, number_ids = pose_estimation(self.img, self.intrinsic_camera, self.distortion)
-                # display the image
-                cv2.imshow('Video Capture', output)
-            # wait for a short time before checking the buffer again
-
-
-    def get_img(self):
-        return self.ret, self.img
-
-
 if __name__ == "__main__":
     rospy.init_node("offb_node_py")
 
@@ -462,24 +438,21 @@ if __name__ == "__main__":
     video_thread = VideoCaptureThread(0)
     video_thread.start()
 
-    my_instance = MyImageProcessingClass(intrinsic_camera, distortion)
-    image_thread = threading.Thread(target=my_instance.image_processing_thread)
-    image_thread.start()
-
-
     while not rospy.is_shutdown():
-        ret, img = my_instance.get_img()
+        ret, img = video_thread.get_current_frame()
+
         #Aruco marker detection
         if img is not None and detect_status == 0:
+            output, number_ids = pose_estimation(img, ARUCO_DICT[aruco_type], intrinsic_camera, distortion)
+            cv2.imshow('Video Capture', output)
         
             if times >= 10: 
                 times = 0
 
                 if number_ids == 289:
-                    alt=3
-                    thread_takeoff = threading.Thread(target=takeoff, args=(pose, alt))
-                    thread_takeoff.start()
-                    thread_takeoff.join()
+                    alt = 3
+                    thread_takeoff = threading.Thread(target=takeoff,args=(pose,alt))
+                    thread_takeoff.start()  
 
                 if number_ids == 291:
                     foward_x(pose,distance=6,altitude=3)
@@ -516,7 +489,7 @@ if __name__ == "__main__":
             outputss, finger_count = hand_counter(img)
             cv2.imshow('Video Capture', outputss)
 
-            if times >= 5:
+            if times >= 10:
                 times = 0
                 if finger_count == 1:
                     foward_z(pose,distance=4)
@@ -534,7 +507,5 @@ if __name__ == "__main__":
             break
     video_thread.stop()
     cv2.destroyAllWindows()
-    stop_flag = True
-    image_thread.join()
 
     rospy.spin()
