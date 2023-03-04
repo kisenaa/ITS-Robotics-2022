@@ -94,7 +94,7 @@ parted -s "$DISK" \
     mklabel gpt \
     mkpart ESP fat32 1MiB 1GB \
     set 1 esp on \
-    mkpart root 128MiB 100GB \
+    mkpart root 1GB 100GB \
 
 sleep 0.1
 ESP="/dev/$(lsblk $DISK -o NAME,PARTLABEL | grep ESP| cut -d " " -f1 | cut -c7-)"
@@ -108,12 +108,7 @@ partprobe "$DISK"
 echo "Formatting the EFI Partition as FAT32."
 mkfs.fat -F 32 -s 2 $ESP &>/dev/null
 
-# Creating a LUKS Container for the root partition.
-echo "Creating LUKS Container for the root partition."
-cryptsetup luksFormat --type luks1 $cryptroot
-echo "Opening the newly created LUKS Container."
-cryptsetup open $cryptroot cryptroot
-BTRFS="/dev/mapper/cryptroot"
+BTRFS="$root"
 
 # Formatting the LUKS Container as BTRFS.
 echo "Formatting the LUKS container as BTRFS."
@@ -213,7 +208,7 @@ mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 # Pacstrap (setting up a base sytem onto the new root).
 # As I said above, I am considering replacing gnome-software with pamac-flatpak-gnome as PackageKit seems very buggy on Arch Linux right now.
 echo "Installing the base system (it may take a while)."
-pacstrap /mnt base ${kernel} ${microcode} linux-firmware grub grub-btrfs snapper snap-pac efibootmgr sudo networkmanager apparmor python-psutil python-notify2 nano gdm gnome-control-center gnome-terminal gnome-software gnome-software-packagekit-plugin gnome-tweaks nautilus pipewire-pulse pipewire-alsa pipewire-jack flatpak firewalld zram-generator adobe-source-han-sans-otc-fonts adobe-source-han-serif-otc-fonts gnu-free-fonts reflector mlocate man-db chrony
+pacstrap /mnt base ${kernel} ${microcode} linux-firmware grub grub-btrfs efibootmgr sudo networkmanager apparmor python-psutil python-notify2 nano nautilus pipewire-pulse pipewire-alsa pipewire-jack flatpak firewalld adobe-source-han-sans-otc-fonts adobe-source-han-serif-otc-fonts gnu-free-fonts reflector mlocate man-db chrony
 
 # Routing jack2 through PipeWire.
 echo "/usr/lib/pipewire-0.3/jack" > /mnt/etc/ld.so.conf.d/pipewire-jack.conf
@@ -249,7 +244,7 @@ sed -i 's,#COMPRESSION="zstd",COMPRESSION="zstd",g' /mnt/etc/mkinitcpio.conf
 sed -i 's,modconf block filesystems keyboard,keyboard modconf block encrypt filesystems,g' /mnt/etc/mkinitcpio.conf
 
 # Enabling LUKS in GRUB and setting the UUID of the LUKS container.
-UUID=$(blkid $cryptroot | cut -f2 -d'"')
+UUID=$(blkid $root | cut -f2 -d'"')
 sed -i 's/#\(GRUB_ENABLE_CRYPTODISK=y\)/\1/' /mnt/etc/default/grub
 echo "" >> /mnt/etc/default/grub
 echo -e "# Booting with BTRFS subvolume\nGRUB_BTRFS_OVERRIDE_BOOT_PARTITION_DETECTION=true" >> /mnt/etc/default/grub
@@ -312,13 +307,6 @@ account		required	pam_unix.so
 session		required	pam_unix.so
 EOF
 
-# ZRAM configuration
-bash -c 'cat > /mnt/etc/systemd/zram-generator.conf' <<-'EOF'
-[zram0]
-zram-fraction = 1
-max-zram-size = 8192
-EOF
-
 # Randomize Mac Address.
 bash -c 'cat > /mnt/etc/NetworkManager/conf.d/00-macrandomize.conf' <<-'EOF'
 [device]
@@ -352,7 +340,7 @@ chmod 600 /mnt/etc/NetworkManager/conf.d/ip6-privacy.conf
 arch-chroot /mnt /bin/bash -e <<EOF
 
     # Setting up timezone.
-    ln -sf /usr/share/zoneinfo/$(curl -s http://ip-api.com/line?fields=timezone) /etc/localtime &>/dev/null
+    ln -sf /usr/share/zoneinfo/Asia/Jakarta /etc/localtime &>/dev/null
 
     # Setting up clock.
     hwclock --systohc
@@ -427,9 +415,6 @@ systemctl enable fstrim.timer --root=/mnt &>/dev/null
 
 # Enabling NetworkManager.
 systemctl enable NetworkManager --root=/mnt &>/dev/null
-
-# Enabling GDM.
-systemctl enable gdm --root=/mnt &>/dev/null
 
 # Enabling AppArmor.
 echo "Enabling AppArmor."
