@@ -98,7 +98,7 @@ parted -s "$DISK" \
 
 sleep 0.1
 ESP="/dev/$(lsblk $DISK -o NAME,PARTLABEL | grep ESP| cut -d " " -f1 | cut -c7-)"
-root="/dev/$(lsblk $DISK -o NAME,PARTLABEL | grep cryptroot | cut -d " " -f1 | cut -c7-)"
+root="/dev/$(lsblk $DISK -o NAME,PARTLABEL | grep root | cut -d " " -f1 | cut -c7-)"
 
 # Informing the Kernel of the changes.
 echo "Informing the Kernel about the disk changes."
