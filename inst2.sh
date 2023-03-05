@@ -1,7 +1,14 @@
 #!/usr/bin/env -S bash -e
 
-# Cleaning the TTY.
 clear
+read -r -p "Please enter name for a user account (leave empty to skip): " username
+
+# Setting password.
+if [[ -n $username ]]; then
+    read -r -p "Please enter a password for the user account: " password
+fi
+# Cleaning the TTY.
+
 
 # Routing jack2 through PipeWire.
 echo "/usr/lib/pipewire-0.3/jack" > /mnt/etc/ld.so.conf.d/pipewire-jack.conf
